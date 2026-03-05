@@ -1012,6 +1012,7 @@ export namespace Provider {
       }),
       limit: z.object({
         context: z.number(),
+        input: z.number().optional(),
         output: z.number(),
       }),
       status: z.enum(["alpha", "beta", "deprecated", "active"]),
@@ -1306,9 +1307,9 @@ export namespace Provider {
               interleaved: true,
             },
             cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-            limit: { context: 200_000, output: 8192 },
+            limit: { context: 1_050_000, input: 272_000, output: 128_000 },
             options: {
-              description: "Latest general purpose model.",
+              description: "Latest general purpose model with 1M context window.",
             },
             headers: {},
           },
