@@ -259,3 +259,130 @@ describe("ProviderTransform.message - DeepSeek reasoning content", () => {
     expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBeUndefined()
   })
 })
+
+describe("ProviderTransform.options - codex store mode", () => {
+  test("enables store=false for codex models on github-copilot provider", () => {
+    const result = ProviderTransform.options(
+      {
+        id: "gpt-5.3-codex",
+        providerID: "github-copilot",
+        api: {
+          id: "gpt-5.3-codex",
+          url: "https://api.githubcopilot.com",
+          npm: "@ai-sdk/github-copilot",
+        },
+        name: "gpt-5.3-codex",
+        capabilities: {
+          temperature: true,
+          reasoning: true,
+          attachment: true,
+          toolcall: true,
+          input: { text: true, audio: false, image: true, video: false, pdf: true },
+          output: { text: true, audio: false, image: false, video: false, pdf: false },
+          interleaved: false,
+        },
+        cost: {
+          input: 0,
+          output: 0,
+          cache: { read: 0, write: 0 },
+        },
+        limit: {
+          context: 200000,
+          output: 8192,
+        },
+        status: "active",
+        options: {},
+        headers: {},
+      },
+      "session-1",
+    )
+
+    expect(result.store).toBe(false)
+    expect(result.reasoningEffort).toBe("medium")
+  })
+
+  test("keeps store enabled for non-codex github-copilot models", () => {
+    const result = ProviderTransform.options(
+      {
+        id: "gpt-5",
+        providerID: "github-copilot",
+        api: {
+          id: "gpt-5",
+          url: "https://api.githubcopilot.com",
+          npm: "@ai-sdk/github-copilot",
+        },
+        name: "gpt-5",
+        capabilities: {
+          temperature: true,
+          reasoning: true,
+          attachment: true,
+          toolcall: true,
+          input: { text: true, audio: false, image: true, video: false, pdf: true },
+          output: { text: true, audio: false, image: false, video: false, pdf: false },
+          interleaved: false,
+        },
+        cost: {
+          input: 0,
+          output: 0,
+          cache: { read: 0, write: 0 },
+        },
+        limit: {
+          context: 200000,
+          output: 8192,
+        },
+        status: "active",
+        options: {},
+        headers: {},
+      },
+      "session-2",
+    )
+
+    expect(result.store).toBeUndefined()
+    expect(result.reasoningEffort).toBe("medium")
+  })
+})
+
+describe("ProviderTransform.providerOptions - openai-compatible mapping", () => {
+  test("maps options to openai key for github-copilot SDK", () => {
+    const opts = { store: false, reasoningEffort: "high" }
+
+    const result = ProviderTransform.providerOptions(
+      {
+        id: "gpt-5.3-codex",
+        providerID: "github-copilot",
+        api: {
+          id: "gpt-5.3-codex",
+          url: "https://api.githubcopilot.com",
+          npm: "@ai-sdk/github-copilot",
+        },
+        name: "gpt-5.3-codex",
+        capabilities: {
+          temperature: true,
+          reasoning: true,
+          attachment: true,
+          toolcall: true,
+          input: { text: true, audio: false, image: true, video: false, pdf: true },
+          output: { text: true, audio: false, image: false, video: false, pdf: false },
+          interleaved: false,
+        },
+        cost: {
+          input: 0,
+          output: 0,
+          cache: { read: 0, write: 0 },
+        },
+        limit: {
+          context: 200000,
+          output: 8192,
+        },
+        status: "active",
+        options: {},
+        headers: {},
+      },
+      opts,
+    )
+
+    expect(result.openai).toEqual(opts)
+    expect(result.openaiCompatible).toEqual(opts)
+    expect(result["github-copilot"]).toEqual(opts)
+  })
+})

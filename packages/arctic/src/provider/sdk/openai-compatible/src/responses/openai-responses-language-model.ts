@@ -193,20 +193,29 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
       warnings.push({ type: "unsupported-setting", setting: "stopSequences" })
     }
 
-    const openaiOptions = await parseProviderOptions({
-      provider: "openai",
-      providerOptions,
-      schema: openaiResponsesProviderOptionsSchema,
-    })
+    const openaiOptions =
+      (await parseProviderOptions({
+        provider: "openai",
+        providerOptions,
+        schema: openaiResponsesProviderOptionsSchema,
+      })) ??
+      (await parseProviderOptions({
+        provider: "openaiCompatible",
+        providerOptions,
+        schema: openaiResponsesProviderOptionsSchema,
+      }))
 
-    const { input, warnings: inputWarnings, instructions: generatedInstructions } =
-      await convertToOpenAIResponsesInput({
-        prompt,
-        systemMessageMode: modelConfig.systemMessageMode,
-        fileIdPrefixes: this.config.fileIdPrefixes,
-        store: openaiOptions?.store ?? true,
-        hasLocalShellTool: hasOpenAITool("openai.local_shell"),
-      })
+    const {
+      input,
+      warnings: inputWarnings,
+      instructions: generatedInstructions,
+    } = await convertToOpenAIResponsesInput({
+      prompt,
+      systemMessageMode: modelConfig.systemMessageMode,
+      fileIdPrefixes: this.config.fileIdPrefixes,
+      store: openaiOptions?.store ?? true,
+      hasLocalShellTool: hasOpenAITool("openai.local_shell"),
+    })
 
     warnings.push(...inputWarnings)
 
@@ -398,7 +407,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
   ): Promise<Awaited<ReturnType<LanguageModelV2["doGenerate"]>>> {
     const { stream } = await this.doStream(options)
     const parts: LanguageModelV2StreamPart[] = []
-    
+
     const reader = stream.getReader()
     while (true) {
       const { done, value } = await reader.read()
@@ -409,7 +418,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
     // Construct response from parts
     // This is a simplified implementation that reconstructs the response from stream parts
     // Ideally we would use a non-streaming endpoint if available, but for now we reuse doStream
-    
+
     let text = ""
     let finishReason: LanguageModelV2FinishReason = "unknown"
     let usage: LanguageModelV2Usage = {
@@ -502,8 +511,9 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
       | undefined
     > = {}
 
-    // flag that checks if there have been client-side tool calls (not executed by openai)
-    let hasFunctionCall = false
+    // tracks client-side tool calls (not executed by OpenAI), used for finish reason mapping
+    let hasClientToolCall = false
+    let responseIncompleteReason: string | null | undefined = undefined
 
     const activeReasoning: Record<
       string,
@@ -642,7 +652,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
             } else if (isResponseOutputItemDoneChunk(value)) {
               if (value.item.type === "function_call") {
                 ongoingToolCalls[value.output_index] = undefined
-                hasFunctionCall = true
+                hasClientToolCall = true
 
                 controller.enqueue({
                   type: "tool-input-end",
@@ -753,6 +763,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
                 })
               } else if (value.item.type === "local_shell_call") {
                 ongoingToolCalls[value.output_index] = undefined
+                hasClientToolCall = true
 
                 controller.enqueue({
                   type: "tool-call",
@@ -915,10 +926,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
                 },
               })
             } else if (isResponseFinishedChunk(value)) {
-              finishReason = mapOpenAIResponseFinishReason({
-                finishReason: value.response.incomplete_details?.reason,
-                hasFunctionCall,
-              })
+              responseIncompleteReason = value.response.incomplete_details?.reason
               usage.inputTokens = value.response.usage.input_tokens
               usage.outputTokens = value.response.usage.output_tokens
               usage.totalTokens = value.response.usage.input_tokens + value.response.usage.output_tokens
@@ -928,7 +936,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
                 serviceTier = value.response.service_tier
               }
             } else if (isResponseAnnotationAddedChunk(value)) {
-              const annotation = value.annotation;
+              const annotation = value.annotation
               if (annotation.type === "url_citation") {
                 controller.enqueue({
                   type: "source",
@@ -957,6 +965,13 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
             if (currentTextId) {
               controller.enqueue({ type: "text-end", id: currentTextId })
               currentTextId = null
+            }
+
+            if (finishReason !== "error") {
+              finishReason = mapOpenAIResponseFinishReason({
+                finishReason: responseIncompleteReason,
+                hasFunctionCall: hasClientToolCall,
+              })
             }
 
             const providerMetadata: SharedV2ProviderMetadata = {

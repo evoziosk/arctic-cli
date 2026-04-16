@@ -15,7 +15,6 @@ function mimeToModality(mime: string): Modality | undefined {
 }
 
 export namespace ProviderTransform {
-
   function normalizeMessages(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
     if (model.api.id.includes("claude")) {
       return msgs.map((msg) => {
@@ -233,8 +232,9 @@ export namespace ProviderTransform {
     thinkingLevel?: "low" | "medium" | "high" | "xhigh",
   ): Record<string, any> {
     const result: Record<string, any> = {}
-    const supportsThinking =
-      model.api.id.includes("thinking") || model.api.id.includes("gemini-3") || model.api.id.includes("opus")
+    const modelID = model.api.id.toLowerCase()
+    const providerID = model.providerID.toLowerCase()
+    const supportsThinking = modelID.includes("thinking") || modelID.includes("gemini-3") || modelID.includes("opus")
 
     if (model.api.npm === "@openrouter/ai-sdk-provider") {
       result["usage"] = {
@@ -265,20 +265,31 @@ export namespace ProviderTransform {
       }
     }
 
-    if (model.api.id.includes("gpt-5") && !model.api.id.includes("gpt-5-chat")) {
-      if (model.providerID.includes("codex")) {
+    if (modelID.includes("gpt-5") && !modelID.includes("gpt-5-chat")) {
+      const isCodexModel = modelID.includes("codex")
+      const isCodexProvider = providerID.includes("codex")
+      const isGithubCopilotProvider =
+        providerID === "github-copilot" ||
+        providerID.startsWith("github-copilot:") ||
+        providerID === "github-copilot-enterprise" ||
+        providerID.startsWith("github-copilot-enterprise:")
+
+      // GitHub Copilot codex models and ChatGPT codex provider work best in
+      // stateless mode to avoid unresolved item references across requests.
+      if (isCodexModel && (isCodexProvider || isGithubCopilotProvider)) {
         result["store"] = false
+
         // gpt-5.2-codex and gpt-5.3-codex support xhigh reasoning
-        if (model.api.id.includes("gpt-5.2-codex") || model.api.id.includes("gpt-5.3-codex")) {
+        if (modelID.includes("gpt-5.2-codex") || modelID.includes("gpt-5.3-codex")) {
           result["reasoningEffort"] = thinkingLevel ?? "medium"
         }
       }
 
-      if (!model.api.id.includes("codex") && !model.api.id.includes("gpt-5-pro")) {
+      if (!isCodexModel && !modelID.includes("gpt-5-pro")) {
         result["reasoningEffort"] = thinkingLevel ?? "medium"
       }
 
-      if (model.api.id.endsWith("gpt-5.") && model.providerID !== "azure") {
+      if (modelID.endsWith("gpt-5.") && model.providerID !== "azure") {
         result["textVerbosity"] = "low"
       }
 
@@ -319,6 +330,13 @@ export namespace ProviderTransform {
       case "@ai-sdk/azure":
         return {
           ["openai" as string]: options,
+        }
+      case "@ai-sdk/openai-compatible":
+      case "@ai-sdk/github-copilot":
+        return {
+          ["openai" as string]: options,
+          ["openaiCompatible" as string]: options,
+          [model.providerID]: options,
         }
       case "@ai-sdk/amazon-bedrock":
         return {

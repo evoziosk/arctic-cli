@@ -16,6 +16,8 @@ export function mapOpenAIResponseFinishReason({
       return "length"
     case "content_filter":
       return "content-filter"
+    case "tool_calls":
+      return "tool-calls"
     default:
       return hasFunctionCall ? "tool-calls" : "unknown"
   }
